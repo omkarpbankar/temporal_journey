@@ -1,0 +1,43 @@
+# Python environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+temporal.toml
+
+# Local Temporal server data
+temporal-dev.db*
+
+# Data created by running the labs and Workers
+*.db
+*.db-shm
+*.db-wal
+capstone-data/
+journey/phase-01-why-temporal/lab/world.json
+journey/phase-01-why-temporal/lab/checkpoints.json
+
+# Logs
+*.log
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Editors and operating systems
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
+

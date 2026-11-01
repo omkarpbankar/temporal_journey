@@ -1,0 +1,43 @@
+# The capstone as separate containers. Temporal itself runs elsewhere: start
+# scripts/dev_server.py on your machine, or point TEMPORAL_ADDRESS at a real cluster.
+#
+#   set CAPSTONE_API_TOKEN and CAPSTONE_KEY_BASE64, then, from temporal-learning:
+#   docker compose -f deploy/docker-compose.yml up --build --scale data=3
+
+x-worker: &worker
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  environment:
+    TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-host.docker.internal:7233}
+    CAPSTONE_KEY_BASE64: ${CAPSTONE_KEY_BASE64:-}
+  volumes:
+    - capstone-data:/data
+  restart: unless-stopped
+  # Long enough for graceful_shutdown_timeout to let running Activities finish.
+  stop_grace_period: 10s
+
+services:
+  orchestration:
+    <<: *worker
+    command: ["python", "-m", "capstone.worker", "--role", "orchestration"]
+
+  io:
+    <<: *worker
+    command: ["python", "-m", "capstone.worker", "--role", "io"]
+
+  data:
+    <<: *worker
+    command: ["python", "-m", "capstone.worker", "--role", "data"]
+
+  api:
+    <<: *worker
+    command: ["uvicorn", "capstone.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-host.docker.internal:7233}
+      CAPSTONE_API_TOKEN: ${CAPSTONE_API_TOKEN:?set CAPSTONE_API_TOKEN}
+    ports:
+      - "8000:8000"
+
+volumes:
+  capstone-data:

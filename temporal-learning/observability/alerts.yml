@@ -1,0 +1,46 @@
+# Alert on symptoms that need a person. A single Activity failure is normal: retries exist.
+# Durations from SDK histograms are in milliseconds by default.
+groups:
+  - name: temporal-workers
+    rules:
+      - alert: NoWorkersPolling
+        expr: sum(temporal_num_pollers) == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "No Workers are polling. Work is queuing, and nothing is lost yet."
+
+      - alert: ActivityBacklog
+        expr: histogram_quantile(0.95, sum by (le, task_queue) (rate(temporal_activity_schedule_to_start_latency_bucket[5m]))) > 30000
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Activities wait over 30s on {{ $labels.task_queue }}. Scale that queue's Workers."
+
+      - alert: WorkflowTaskBacklog
+        expr: histogram_quantile(0.95, sum by (le, task_queue) (rate(temporal_workflow_task_schedule_to_start_latency_bucket[5m]))) > 5000
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Workflow Tasks wait over 5s on {{ $labels.task_queue }}."
+
+      - alert: ActivityFailureSpike
+        expr: sum by (activity_type) (rate(temporal_activity_execution_failed[5m])) > 1
+        for: 10m
+        labels: {severity: warn}
+        annotations:
+          summary: "{{ $labels.activity_type }} keeps failing. Likely a dependency outage or retry storm."
+
+      - alert: WorkflowFailures
+        expr: sum(rate(temporal_workflow_failed[5m])) > 0.1
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "Workflows are failing."
+
+      - alert: WorkerSlotsExhausted
+        expr: min by (task_queue) (temporal_worker_task_slots_available{worker_type="ActivityWorker"}) == 0
+        for: 5m
+        labels: {severity: warn}
+        annotations:
+          summary: "{{ $labels.task_queue }} has no free Activity slots."

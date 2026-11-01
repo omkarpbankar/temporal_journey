@@ -1,0 +1,6 @@
+tests
+scripts
+observability
+**/__pycache__
+*.db
+capstone-data
