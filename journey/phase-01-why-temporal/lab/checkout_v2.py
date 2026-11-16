@@ -1,15 +1,9 @@
-"""YOUR EXERCISE: checkout that remembers its progress.
+"""Checkout that remembers its progress via file checkpoints.
 
 Idea: after each step, save a note saying that step is done. After a crash,
 run the program again, and it skips anything already noted.
 
-Step 1 is done for you. Finish steps 2, 3, and 4 using the same pattern.
-
-Run it:
-    python checkout_v2.py ORD-3 --crash-at after_charge
-    python checkout_v2.py ORD-3
-
-Crash points to include:
+Crash points:
     after_order, after_order_saved
     after_charge, after_charge_saved
     after_reserve, after_reserve_saved
@@ -25,37 +19,77 @@ ITEM = "keyboard"
 AMOUNT = 100
 
 
-def load_done_steps(order_id: str) -> list[str]:
+def load_state(order_id: str) -> dict:
     if not world.CHECKPOINT_FILE.exists():
-        return []
-    return json.loads(world.CHECKPOINT_FILE.read_text()).get(order_id, [])
+        return {"done": [], "charge_id": None}
+    try:
+        data = json.loads(world.CHECKPOINT_FILE.read_text())
+        return data.get(order_id, {"done": [], "charge_id": None})
+    except (json.JSONDecodeError, OSError):
+        return {"done": [], "charge_id": None}
 
 
-def mark_done(order_id: str, step: str) -> None:
+def save_state(order_id: str, state: dict) -> None:
     data = {}
     if world.CHECKPOINT_FILE.exists():
-        data = json.loads(world.CHECKPOINT_FILE.read_text())
-    data.setdefault(order_id, []).append(step)
+        try:
+            data = json.loads(world.CHECKPOINT_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data[order_id] = state
     world.CHECKPOINT_FILE.write_text(json.dumps(data, indent=2))
 
 
-def checkout(order_id: str, crash_at: str | None) -> None:
-    done = load_done_steps(order_id)
-    print(f"Starting checkout for {order_id}. Already done: {done}")
+def load_done_steps(order_id: str) -> list[str]:
+    """Helper keeping backwards compatibility with earlier starter code."""
+    return load_state(order_id)["done"]
 
-    if "order" not in done:
+
+def checkout(order_id: str, crash_at: str | None) -> None:
+    state = load_state(order_id)
+    print(f"Starting checkout for {order_id}. Already done: {state['done']}")
+
+    # Step 1: Create Order
+    if "order" not in state["done"]:
         world.create_order(order_id, ITEM, AMOUNT)
         print("  1. Order created")
         world.crash_if("after_order", crash_at)
-        mark_done(order_id, "order")
+        state["done"].append("order")
+        save_state(order_id, state)
         world.crash_if("after_order_saved", crash_at)
 
-    # TODO: step 2, charge the card
-    # TODO: step 3, reserve inventory
-    # TODO: step 4, send the email. It needs a receipt number.
-    #       Think: if the charge happened in an earlier run, where do you
-    #       get the charge ID from now?
-    raise NotImplementedError("Your turn: finish steps 2, 3, and 4")
+    # Step 2: Charge Card
+    if "charge" not in state["done"]:
+        # Passing order_id as idempotency_key closes the gap where the process crashes
+        # right after the bank commits the charge but before the checkpoint is written.
+        charge_id = world.charge_card(order_id, AMOUNT, idempotency_key=order_id)
+        print(f"  2. Card charged ({charge_id})")
+        world.crash_if("after_charge", crash_at)
+        state["done"].append("charge")
+        state["charge_id"] = charge_id
+        save_state(order_id, state)
+        world.crash_if("after_charge_saved", crash_at)
+
+    # Step 3: Reserve Inventory
+    if "reserve" not in state["done"]:
+        world.reserve_inventory(order_id, ITEM)
+        print("  3. Inventory reserved")
+        world.crash_if("after_reserve", crash_at)
+        state["done"].append("reserve")
+        save_state(order_id, state)
+        world.crash_if("after_reserve_saved", crash_at)
+
+    # Step 4: Send Confirmation Email
+    if "email" not in state["done"]:
+        charge_id = state.get("charge_id")
+        world.send_email(order_id, f"Thanks! Your {ITEM} is on its way. Receipt: {charge_id}")
+        print("  4. Confirmation sent")
+        world.crash_if("after_email", crash_at)
+        state["done"].append("email")
+        save_state(order_id, state)
+        world.crash_if("after_email_saved", crash_at)
+
+    print("Done!")
 
 
 if __name__ == "__main__":
